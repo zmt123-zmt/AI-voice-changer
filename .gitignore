@@ -1,0 +1,17 @@
+# 虚拟环境与缓存
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# 模型权重（体积大，自行下载）
+models/
+
+# 运行时数据（用户隐私：音频、音色库、设置、数据库、日志）
+data/
+*.log
+app_launch.log
+
+# 编译产物（启动器 exe，自行编译）
+AI-change-voice.exe
+*.exe

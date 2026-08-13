@@ -59,7 +59,7 @@ class RealtimePage(QWidget):
         cl.addLayout(cfg_row)
         self.engine_label = make_label("", "Muted")
         cl.addWidget(self.engine_label)
-        self.pitch = self._slider_row(cl, "音调", -12, 12, 0, " 半音")
+        self.pitch = self._slider_row(cl, "音调", -24, 24, self.ctx.config.settings.rvc_f0up_key, " 半音")
         self.dry_wet = self._slider_row(cl, "干湿比", 0, 100, 100, "%")
         self.in_gain = self._slider_row(cl, "输入音量", 0, 150, 100, "%")
         self.out_gain = self._slider_row(cl, "输出音量", 0, 150, 100, "%")
@@ -156,7 +156,7 @@ class RealtimePage(QWidget):
         strength = self.dry_wet.value() / 100.0
         return VCParams(
             semitones=float(self.pitch.value()),
-            strength=strength,
+            strength=-1.0,  # 像训练样本权重交给设置默认（干湿比滑杆只管原声/变声混合）
             wet=strength,
             volume=1.0,
         )

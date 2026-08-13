@@ -71,8 +71,11 @@ class VCPage(QWidget):
         self.engine_label = make_label("", "Muted")
         cl.addWidget(self.engine_label)
         cl.addWidget(make_label("参数", "SectionTitle"))
-        self.pitch = self._slider_row(cl, "音调", -12, 12, 0, " 半音")
-        self.strength = self._slider_row(cl, "转换强度", 0, 100, 85, "%")
+        self.pitch = self._slider_row(cl, "音调", -24, 24, self.ctx.config.settings.rvc_f0up_key, " 半音")
+        # 像训练样本 = RVC index_rate（0=自由发挥保留输入，100=完全贴训练样本）
+        self.strength = self._slider_row(
+            cl, "像训练样本", 0, 100, int(self.ctx.config.settings.rvc_index_rate * 100), "%"
+        )
         self.denoise = self._slider_row(cl, "去噪", 0, 100, 0, "%")
         self.volume = self._slider_row(cl, "音量", 0, 100, 100, "%")
         root.addWidget(cfg_card)
@@ -239,7 +242,10 @@ class VCPage(QWidget):
         self.ctx.notify("任务已加入队列")
 
         def work():
-            out_sr, out_data = engine.convert(src_data, src_sr, voice, params)
+            def prog(p, msg):
+                ui_soon(self.ctx.notify)(f"RVC 转换 {p:.0%}：{msg}")
+
+            out_sr, out_data = engine.convert(src_data, src_sr, voice, params, progress=prog)
             if params.volume != 1.0:
                 out_data = dsp.volume(out_data, params.volume)
             out_sr = int(out_sr)

@@ -24,13 +24,40 @@ from app.core import audio_io
 class AudioPlayer(QObject):
     playing_changed = Signal(bool)
 
-    def __init__(self) -> None:
+    def __init__(self, settings=None) -> None:
         super().__init__()
+        self._settings = settings
         self._timer = QTimer(self)
         self._timer.setInterval(120)
         self._timer.timeout.connect(self._poll)
         self._data: np.ndarray | None = None
         self._sr = 48000
+        self._output_override: str = ""  # 运行时临时指定播放设备名（'' = 用设置默认）
+
+    def set_output_device(self, name: str) -> None:
+        """运行时指定播放设备名；传 '' 回到设置默认（系统默认）。"""
+        self._output_override = name or ""
+
+    def _resolve_device_index(self) -> int | None:
+        """按播放设备名解析出 sounddevice 设备索引；未配置返回 None（系统默认）。"""
+        name = self._output_override
+        if not name and self._settings is not None:
+            name = getattr(self._settings, "default_output_device", "") or ""
+        if not name:
+            return None
+        import sounddevice as sd
+
+        base = name.split(" (")[0].strip()
+        try:
+            for i, dev in enumerate(sd.query_devices()):
+                if dev.get("max_output_channels", 0) <= 0:
+                    continue
+                dname = dev["name"]
+                if dname == name or dname.startswith(base):
+                    return i
+        except Exception:
+            return None
+        return None
 
     def play(self, data: np.ndarray, sr: int) -> None:
         self.stop()
@@ -39,7 +66,8 @@ class AudioPlayer(QObject):
         self._data = np.asarray(data, dtype=np.float32)
         self._sr = int(sr)
         try:
-            sd.play(self._data, self._sr)
+            # 指定设备：例如 VB-Cable 虚拟声卡（CABLE Input），配合微信语音条录制
+            sd.play(self._data, self._sr, device=self._resolve_device_index())
             self._timer.start()
             self.playing_changed.emit(True)
         except Exception:

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -17,8 +19,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..context import AppContext
+from ..context import AppContext, run_background, ui_soon
 from ..widgets import FileField, make_label
+from ...engines.realtime import AudioDeviceManager
 
 
 class SettingsPage(QWidget):
@@ -59,6 +62,20 @@ class SettingsPage(QWidget):
         self.output_sr.addItem("44.1 kHz", 44100)
         self.output_sr.addItem("24 kHz", 24000)
         form.addRow("输出采样率", self.output_sr)
+        # 播放输出设备：选虚拟声卡（如 VB-Cable 的 CABLE Input）可让播放只进虚拟麦克风，
+        # 配合微信按住说话把生成的语音变成语音条
+        self.output_device = QComboBox()
+        self.output_device.addItem("系统默认", "")
+        try:
+            for dev in AudioDeviceManager.output_devices():
+                self.output_device.addItem(dev["name"], dev["name"])
+        except Exception:
+            pass
+        self.output_device.setToolTip(
+            "播放音频时使用的输出设备；选虚拟声卡（VB-Cable 等）后播放声音不会进音箱，"
+            "可被微信语音条直接录到"
+        )
+        form.addRow("音频输出设备", self.output_device)
         self.watermark = QCheckBox("导出时附带授权声明（语音水印）")
         form.addRow("合规", self.watermark)
         gl.addLayout(form)
@@ -99,7 +116,14 @@ class SettingsPage(QWidget):
         self.rvc_rate.setSingleStep(0.05)
         self.rvc_rate.setValue(0.75)
         rform.addRow("索引比率", self.rvc_rate)
+        self.rvc_sid = QSpinBox()
+        self.rvc_sid.setRange(0, 99999)
+        self.rvc_sid.setToolTip("多音色模型（n_spk>1）需要指定说话人编号，单音色模型固定为 0")
+        rform.addRow("说话人 sid", self.rvc_sid)
         rl.addLayout(rform)
+        self.model_info = make_label("", "Muted")
+        self.model_info.setWordWrap(True)
+        rl.addWidget(self.model_info)
         rl.addWidget(make_label("提示：RVC 实时变声需要训练好的模型（建议 3~10 分钟干净人声），并安装 rvc-python。", "Muted"))
         cl.addWidget(rvc_card)
 
@@ -146,6 +170,9 @@ class SettingsPage(QWidget):
         idx = self.output_sr.findData(s.output_sr)
         if idx >= 0:
             self.output_sr.setCurrentIndex(idx)
+        dev_idx = self.output_device.findData(s.default_output_device)
+        if dev_idx >= 0:
+            self.output_device.setCurrentIndex(dev_idx)
         self.watermark.setChecked(s.watermark_enabled)
         self.gpt_dir.setText(s.gpt_sovits_dir)
         self.gpt_script.setText(s.gpt_sovits_api_script)
@@ -158,6 +185,8 @@ class SettingsPage(QWidget):
             self.rvc_f0.setCurrentIndex(idx)
         self.rvc_f0up.setValue(s.rvc_f0up_key)
         self.rvc_rate.setValue(s.rvc_index_rate)
+        self.rvc_sid.setValue(s.rvc_sid)
+        self._update_model_info()
 
     def _save(self) -> None:
         s = self.ctx.config.settings
@@ -166,6 +195,7 @@ class SettingsPage(QWidget):
             output_dir=self.output_dir.text(),
             output_format=self.output_format.currentText(),
             output_sr=self.output_sr.currentData(),
+            default_output_device=self.output_device.currentData() or "",
             watermark_enabled=self.watermark.isChecked(),
             gpt_sovits_dir=self.gpt_dir.text(),
             gpt_sovits_api_script=self.gpt_script.text(),
@@ -176,9 +206,50 @@ class SettingsPage(QWidget):
             rvc_f0_method=self.rvc_f0.currentText(),
             rvc_f0up_key=self.rvc_f0up.value(),
             rvc_index_rate=self.rvc_rate.value(),
+            rvc_sid=self.rvc_sid.value(),
         )
         self.refresh()
+        self._update_model_info()
         self.ctx.notify("设置已保存")
+
+    def _update_model_info(self) -> None:
+        """后台读取 .pth 的元信息（版本/采样率/音色数），展示给用户。"""
+        path = self.ctx.config.settings.rvc_model_path
+        if not path or not Path(path).exists():
+            self.model_info.setText("未配置模型文件")
+            return
+        self.model_info.setText("正在读取模型信息…")
+
+        def work():
+            import torch
+
+            cpt = torch.load(path, map_location="cpu", weights_only=False)
+            cfg = cpt.get("config") or []
+            n_spk = "?"
+            try:
+                n_spk = cpt["weight"]["emb_g.weight"].shape[0]
+            except Exception:
+                pass
+            sr = cfg[-1] if cfg else "?"
+            return {
+                "version": cpt.get("version", "?"),
+                "f0": cpt.get("f0", "?"),
+                "sr": sr,
+                "n_spk": n_spk,
+            }
+
+        def done(info: dict):
+            n_spk = info["n_spk"]
+            multi = n_spk != "?" and int(n_spk) > 1
+            self.model_info.setText(
+                f"模型信息：v{info['version']} · {info['sr']}Hz · F0={'有' if info['f0'] else '无'} · "
+                f"{n_spk} 个音色{'⚠️ 多音色模型，请在上方选择 sid' if multi else ''}"
+            )
+
+        def error(exc):
+            self.model_info.setText(f"读取模型信息失败：{exc}")
+
+        run_background(work, ui_soon(done), ui_soon(error))
 
     def refresh(self) -> None:
         g = self.ctx.engines.gpt_sovits.status()

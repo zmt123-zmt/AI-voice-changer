@@ -26,7 +26,8 @@ class TTSParams:
 @dataclass
 class VCParams:
     semitones: float = 0.0
-    strength: float = 0.85
+    # strength: RVC 引擎当作 index_rate（像训练样本的程度），-1 表示用设置默认值
+    strength: float = -1.0
     denoise: float = 0.0
     wet: float = 1.0
     volume: float = 1.0

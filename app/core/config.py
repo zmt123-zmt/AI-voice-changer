@@ -33,6 +33,7 @@ class Settings:
     rvc_f0_method: str = "rmvpe"
     rvc_f0up_key: int = 0
     rvc_index_rate: float = 0.75
+    rvc_sid: int = 0
     rvc_cli_template: str = ""
     watermark_enabled: bool = False
     default_input_device: str = ""
@@ -82,6 +83,7 @@ class Settings:
             "rvc_f0_method": self.rvc_f0_method,
             "rvc_f0up_key": self.rvc_f0up_key,
             "rvc_index_rate": self.rvc_index_rate,
+            "rvc_sid": self.rvc_sid,
             "rvc_cli_template": self.rvc_cli_template,
             "watermark_enabled": self.watermark_enabled,
             "default_input_device": self.default_input_device,

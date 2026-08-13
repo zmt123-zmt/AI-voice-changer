@@ -5,6 +5,7 @@ import time
 import numpy as np
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QFileDialog,
     QHBoxLayout,
@@ -112,6 +113,12 @@ class TTSPage(QWidget):
         self.play_btn = QPushButton("试听")
         self.play_btn.setEnabled(False)
         self.play_btn.clicked.connect(self._play_result)
+        self.wechat_mode = QCheckBox("播放到虚拟声卡（微信语音条）")
+        self.wechat_mode.setToolTip(
+            "勾选后「试听」的声音进虚拟声卡（VB-Cable），音箱听不到，"
+            "但微信按住说话能录到；不勾选正常音箱/耳机试听"
+        )
+        btn_row.addWidget(self.wechat_mode)
         btn_row.addStretch(1)
         btn_row.addWidget(self.play_btn)
         btn_row.addWidget(self.export_btn)
@@ -258,8 +265,14 @@ class TTSPage(QWidget):
         self.ctx.jobs.submit(Job("文字转语音", work, ui_soon(done), ui_soon(error)))
 
     def _play_result(self) -> None:
-        if self._result:
-            self.ctx.player.play(self._result[1], self._result[0])
+        if not self._result:
+            return
+        # 勾选「微信语音条」→ 播放走虚拟声卡（CABLE Input），否则系统默认（音箱/耳机）
+        if self.wechat_mode.isChecked():
+            self.ctx.player.set_output_device("CABLE Input (VB-Audio Virtual Cable)")
+        else:
+            self.ctx.player.set_output_device("")
+        self.ctx.player.play(self._result[1], self._result[0])
 
     def _export(self) -> None:
         if not self._result:

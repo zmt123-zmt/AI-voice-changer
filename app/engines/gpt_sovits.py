@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import http.client
 import json
 import subprocess
 import sys
@@ -180,6 +181,13 @@ class GPTSoVITS_TTS:
             body = exc.read().decode("utf-8", errors="ignore")[:300].strip()
             raise RuntimeError(
                 f"GPT-SoVITS 合成失败（HTTP {exc.code}）：{body}"
+            ) from exc
+        except (http.client.IncompleteRead, http.client.RemoteDisconnected, ConnectionResetError) as exc:
+            # 服务端在合成过程中异常断开（uvicorn 已发响应头但生成器崩溃 → 0 字节 body）。
+            # 常见诱因：API 进程运行太久状态损坏 / GPU 上下文异常，重启 API 即可。
+            raise RuntimeError(
+                "GPT-SoVITS 服务端连接中断（服务端合成时出错，返回了空音频）。\n"
+                "请关闭 GPT-SoVITS 的 API 窗口并用 start-api-doria.bat 重新启动，再重试。"
             ) from exc
 
     @staticmethod
